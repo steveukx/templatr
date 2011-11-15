@@ -134,9 +134,9 @@ Script.prototype.src = '';
  * @param {Element} node
  */
 Script.readInlineScriptTag = function(script, node) {
-	setTimeout(function() {
+	process.nextTick(function() {
 		script.setContent( node.firstChild && node.firstChild.nodeValue );
-	},1);
+	});
 };
 
 /**
@@ -147,9 +147,9 @@ Script.readInlineScriptTag = function(script, node) {
  * @param {String} src The base path for any relative URL
  */
 Script.readLocalScriptFile = function(script, src) {
-	setTimeout(function() {
-		script.setContent(fs.readFileSync(src, 'utf8'));
-	},1);
+	fs.readFile(src, 'utf8', function(err,data) {
+		script.setContent(data);
+	});
 };
 
 /**
