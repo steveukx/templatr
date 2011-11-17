@@ -1,14 +1,14 @@
 {
   "name": "templatr",
   "description": "Parses HTML templates for use as middleware",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "author": "Steve King <steve@mydev.co>",
   "contributors": [ 
     { "name": "Steve King", "email": "steve@mydev.co" }
   ],
   "dependencies": {
     "jsdom": ">= 0.2.9",
-    "xhrequest": ">= 1.0.0"
+    "xhrequest": ">= 1.0.1"
   },
   "devDependencies": {
   },

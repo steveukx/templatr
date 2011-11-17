@@ -4,6 +4,18 @@ var fs = require('fs'),
 	 xhr = require('xhrequest'),
 	 EventEmitter = require( "events" ).EventEmitter;
 
+function previousNode(fromNode) {
+	var rtnNode, prevNode, curNode = fromNode;
+
+	while(curNode && (curNode = curNode.previousSibling)) {
+		if(curNode.nodeType == 1) {
+			rtnNode = curNode;
+			break;
+		}
+	}
+	return rtnNode || null;
+}
+
 /**
  * The Template is a convenience method for storing the content of a template and precaching any 
  * JavaScript that it uses so that the template can be used repeatedly without making excess calls
@@ -13,16 +25,30 @@ var fs = require('fs'),
  * @param {String} templateName
  * @constructor
  */
-function Template(templateDir, templateName) {
+function Template(templateDir, templateName, options) {
+	this._options = options || 0;
 	this._scripts = [];
 	this._dir = templateDir + (templateDir.match(/\/$/) ? '' : '/');
 	this._template = fs.readFileSync(this._dir + (templateName || 'template.htm'), 'utf8');
 
+	if(options & Template.REMOVE_WHITE_SPACE) {
+		this._template = this._template.replace(/>\s+</g, '><');
+	}
+
 	this._initialiseScripts();
 }
 
+/** @type BIT option for the Template constructor */
+Template.REMOVE_WHITE_SPACE = 1;
+
 /** @type {Script[]} */
 Template.prototype._scripts = null;
+
+/** @type {String} */
+Template.prototype._template = null;
+
+/** @type {String[]} */
+Template.prototype._bundledScripts = null;
 
 /**
  * Parses the template synchronously, gets any script tag in the document and issues requests for
@@ -45,7 +71,7 @@ Template.prototype._initialiseScripts = function() {
 		}
 	}
 
-	this._template = doc.doctype + doc.innerHTML;
+	this._template = doc;
 };
 
 /**
@@ -55,13 +81,40 @@ Template.prototype._initialiseScripts = function() {
  * @param {String} scriptContent
  */
 Template.prototype._onScriptLoaded = function(script, scriptContent) {
+	console.log('script loaded: ' + script.src);
 	if(this._scripts.every(function(scr) { return scr.loaded; })) {
-		this._ready = true;
-		console.log('Template ready for use...');
-//		console.log(this._template);
+		this._finaliseTemplate();
 	}
 };
 
+/**
+ * Called once all requires external resources have been loaded, this will merge together any
+ * script tags that are next to each other in the document to reduce the number of external
+ * resources loaded by the client.
+ */
+Template.prototype._finaliseTemplate = function() {
+	this._ready = true;
+
+	var bundledScripts = [];
+	this._scripts.forEach(function(itm) {
+		if(itm.serverOnly) return;
+
+		var node = itm.getNode();
+		if(itm.isFollowOnScript()) {
+			bundledScripts[bundledScripts.length - 1] += itm.content;
+			node.parentNode.removeChild(node);
+		}
+		else {
+			bundledScripts[bundledScripts.length] = itm.content;
+			node.setAttribute('src', './script-' + (bundledScripts.length - 1) + '.js');
+		}
+	});
+
+	this._bundledScripts = bundledScripts;
+	this._template = this._template.doctype + this._template.innerHTML;
+
+	console.log('Template ready for use...');
+};
 
 /**
  * Sets up an express / connect compatible middleware for creating the template and sending it out on a
@@ -76,16 +129,26 @@ Template.prototype.middleware = function() {
  * runs all of the JavaScript and then outputs the resulting HTML.
  */
 Template.prototype._middleware = function(req, res, next) {
+
+	var url, staticContent;
+	if(url = req.url.match(/script\-(\d+)\.js$/)) {
+		if(staticContent = this._bundledScripts[url[1]]) {
+			res.send(staticContent);
+			return;
+		}
+	}
+
 	jsdom.env({
 		html: this._template,
 		scripts: [],
-		src: this._scripts,
+		src: [
+			'document.location = "http://domain' + req.url + '";'
+		].concat(this._scripts),
 		done: function(errs, win) {
 			res.send( win.document.doctype + win.document.innerHTML);
 		}
 	});
 };
-
 
 /**
  * The Script class wraps a SCRIPT element in the template document and is responsible for exposing
@@ -99,7 +162,10 @@ function Script(node, srcPath) {
 
 	EventEmitter.call(this);
 
+	this._node = node;
+
 	this.serverOnly = !!(node.getAttribute('runat') || '').match(/server/i);
+
 	if(!node.src) {
 		Script.readInlineScriptTag(this, node);
 	}
@@ -126,6 +192,29 @@ Script.prototype.serverOnly = false;
 
 /** @type {String} */
 Script.prototype.src = '';
+
+/**
+ * Gets the node from the original parsing of the template that this Script instance represents
+ * @return {Element}
+ */
+Script.prototype.getNode = function() {
+	return this._node;
+};
+
+/**
+ * Gets whether the current script follows immediately after another script tag. As this method will only be called
+ * once server-only scripts have been removed from the template, it doesn't need to check for the runat attribute.
+ * @return (Boolean}
+ */
+Script.prototype.isFollowOnScript = function() {
+	var prevNode = previousNode(this._node);
+	try {
+		return (prevNode.nodeName == 'SCRIPT');
+	}
+	catch(e) {
+		console.log('die', e);
+	}
+};
 
 /**
  * Reads the content of an inline script tag and on next tick pushes it into the Script instance
