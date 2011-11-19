@@ -26,6 +26,8 @@ function previousNode(fromNode) {
  * @constructor
  */
 function Template(templateDir, templateName, options) {
+	EventEmitter.call(this);
+
 	this._options = options || 0;
 	this._scripts = [];
 	this._dir = templateDir + (templateDir.match(/\/$/) ? '' : '/');
@@ -37,6 +39,7 @@ function Template(templateDir, templateName, options) {
 
 	this._initialiseScripts();
 }
+Template.prototype = Object.create( EventEmitter.prototype );
 
 /** @type BIT option for the Template constructor */
 Template.REMOVE_WHITE_SPACE = 1;
@@ -138,6 +141,8 @@ Template.prototype._middleware = function(req, res, next) {
 		}
 	}
 
+	var self = this;
+
 	jsdom.env({
 		html: this._template,
 		scripts: [],
@@ -145,9 +150,44 @@ Template.prototype._middleware = function(req, res, next) {
 			'document.location = "http://domain' + req.url + '";'
 		].concat(this._scripts),
 		done: function(errs, win) {
-			res.send( win.document.doctype + win.document.innerHTML);
+			self.emit('ready', win);
+
+			process.nextTick(function() {
+				res.send( win.document.doctype + win.document.innerHTML);
+			});
 		}
 	});
+};
+
+/**
+ * Runs the supplied script against the supplied document.
+ * 
+ * $param {Function|String} script
+ * $param {Document} doc
+ * $param {Window} win
+ */
+Template.runScript = function(script, window) {
+
+
+	var scriptTag,
+		 features = window.document.implementation._features,
+		 doc = window.document,
+		 docElement = doc.documentElement;
+
+	scriptTag = doc.createElement('script');
+	scriptTag.text = script.toString();
+	if(typeof script == 'function') {
+		scriptTag.text += '\n' + script.name + '();';
+	}
+
+	window.document.implementation.addFeature('FetchExternalResources', ['script']);
+	window.document.implementation.addFeature('ProcessExternalResources', ['script']);
+	window.document.implementation.addFeature('MutationEvents', ["1.0"]);
+
+	docElement.appendChild(scriptTag);
+	docElement.removeChild(scriptTag);
+
+	window.document.implementation._features = features;
 };
 
 /**
