@@ -1,28 +1,19 @@
 {
-  "name": "templatr",
-  "description": "Parses HTML templates for use as middleware",
-  "version": "0.0.4",
-  "author": "Steve King <steve@mydev.co>",
-  "contributors": [ 
-    { "name": "Steve King", "email": "steve@mydev.co" }
-  ],
-  "dependencies": {
-    "jsdom": ">= 0.2.9",
-    "xhrequest": ">= 1.0.1"
-  },
-  "devDependencies": {
-  },
-  "keywords": ["template", "middleware", "html", "preprocess"],
-  "repository": {
-    "type": "git",
-    "url": "git://github.com/steveukx/templatr"
-  },
-  "main": "index",
-  "bin": {
-  },
-  "scripts": {
-  },
-  "config": {
-  },
-  "engines": { "node": ">= 0.4.1" }
+   "name":              "templatr",
+   "description":       "Parses HTML templates for use as connect or express middle ware components",
+   "version":           "0.0.5",
+   "author":            "Steve King <steve@mydev.co>",
+   "contributors":      [ { "name": "Steve King", "email": "steve@mydev.co" } ],
+   "dependencies": {
+      "jsdom":          ">= 0.2.9",
+      "xhrequest":      ">= 1.0.2"
+   },
+   "devDependencies":   {},
+   "keywords":          ["template", "middleware", "html", "preprocess"],
+   "repository":        "git://github.com/steveukx/templatr",
+   "main":              "index",
+   "bin":               {},
+   "scripts":           {},
+   "config":            {},
+   "engines":           { "node": ">= 0.4.1" }
 }
