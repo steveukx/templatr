@@ -4,8 +4,8 @@ var fs = require('fs'),
 	 xhr = require('xhrequest'),
 	 EventEmitter = require( "events" ).EventEmitter,
 
-	 Script = require('script.js'),
-	 Response = require('response.js');
+	 Script = require('./script'),
+	 Response = require('./response');
 
 /**
  * The Template is a convenience method for storing the content of a template and precaching any 
@@ -32,8 +32,14 @@ function Template(templateDir, templateName, options) {
 }
 Template.prototype = Object.create( EventEmitter.prototype );
 
-/** @type BIT option for the Template constructor */
+/** @type {Number} BIT option for the Template constructor to remove any white space in the HTML of the template */
 Template.REMOVE_WHITE_SPACE = 1;
+
+/** @type {Number} BIT option for the Template constructor to merge consecutive script tags together */
+Template.MERGE_SCRIPTS = 2;
+
+/** @type {Number} BIT option for the Template constructor to print out detail of operations to the console */
+Template.VERBOSE = 4;
 
 /** @type {Script[]} */
 Template.prototype._scripts = null;
@@ -45,10 +51,20 @@ Template.prototype._template = null;
 Template.prototype._bundledScripts = null;
 
 /**
+ * This is the method that will print to the console when verbose mode has been enabled.
+ * @ignore
+ */
+Template.prototype._log = function() {
+   if(this._options & Template.VERBOSE) {
+      console.log.apply(console, arguments);
+   }
+};
+
+/**
  * Parses the template synchronously, gets any script tag in the document and issues requests for
  * the JavaScript that makes up the script tag. This method will cater for relative URLs assuming
  * that the template is in the root of the site and that the structure of the file system matches
- * that in the URLs. HTTP(S) linked files are asynchonously loaded and inline scripts are read
+ * that in the URLs. HTTP(S) linked files are asynchronously loaded and inline scripts are read
  * directly from the DOM.
  */
 Template.prototype._initialiseScripts = function() {
@@ -75,7 +91,7 @@ Template.prototype._initialiseScripts = function() {
  * @param {String} scriptContent
  */
 Template.prototype._onScriptLoaded = function(script, scriptContent) {
-	console.log('script loaded: ' + script.src);
+	this._log('script loaded: ' + script.src);
 	if(this._scripts.every(function(_script) { return _script.loaded; })) {
 		this._finaliseTemplate();
 	}
@@ -87,27 +103,29 @@ Template.prototype._onScriptLoaded = function(script, scriptContent) {
  * resources loaded by the client.
  */
 Template.prototype._finaliseTemplate = function() {
-	this._ready = true;
+   var bundledScripts = [];
 
-	var bundledScripts = [];
-	this._scripts.forEach(function(itm, index) {
-		if(itm.serverOnly) return;
+   if(this._options & Template.MERGE_SCRIPTS) {
+      this._scripts.forEach(function(itm, index) {
+         if(itm.serverOnly) return;
 
-		var node = itm.getNode();
-		if(itm.isFollowOnScript()) {
-			bundledScripts[bundledScripts.length - 1] += itm.content;
-			node.parentNode.removeChild(node);
-		}
-		else {
-			bundledScripts[bundledScripts.length] = itm.content;
-			node.setAttribute('src', './script-' + (bundledScripts.length - 1) + '.js');
-		}
-	});
+         var node = itm.getNode();
+         if(itm.isFollowOnScript()) {
+            bundledScripts[bundledScripts.length - 1] += itm.content;
+            node.parentNode.removeChild(node);
+         }
+         else {
+            bundledScripts[bundledScripts.length] = itm.content;
+            node.setAttribute('src', './script-' + (bundledScripts.length - 1) + '.js');
+         }
+      });
+   }
 
 	this._bundledScripts = bundledScripts;
 	this._template = this._template.doctype + this._template.innerHTML;
 
-	console.log('Template ready for use...');
+   this._log('Template ready for use...');
+   this.emit(Template.TEMPLATE_PREPARED_EVENT, this);
 };
 
 /**
@@ -144,7 +162,7 @@ Template.prototype._middleware = function(req, res, next) {
 			if(errs) throw errs;
 
 			var response = new Response(win, res);
-			self.emit('ready', response);
+			self.emit(Template.INSTANCE_READY_EVENT, response);
 
 			if(!response._waiting) {
 				response.send();
@@ -152,6 +170,21 @@ Template.prototype._middleware = function(req, res, next) {
 		}
 	});
 };
+
+/**
+ * Fired by the Template when a new document has been created and is ready to send to the client, handlers can make
+ * changes to the Response before it is sent - note that any long running tasks should use the Response.wait method
+ * and call Response.done when complete.
+ * @event
+ */
+Template.INSTANCE_READY_EVENT = 'ready';
+
+/**
+ * Fired by the Template when it has finished parsing any elements in the template file, the Template is now ready for
+ * use and can respond to client requests.
+ * @event
+ */
+Template.TEMPLATE_PREPARED_EVENT = 'initialised';
 
 module.exports = Template;
 
